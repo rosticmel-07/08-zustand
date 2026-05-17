@@ -1,73 +1,68 @@
 "use client";
 
 import { useState } from "react";
-import SearchBox from "@/components/SearchBox/SearchBox";
-import Pagination from "@/components/Pagination/Pagination";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { useDebouncedCallback } from "use-debounce";
 import { fetchNotes } from "@/lib/api";
 import NoteList from "@/components/NoteList/NoteList";
-import { useDebouncedCallback } from "use-debounce";
-import Modal from "@/components/Modal/Modal";
-import { NoteForm } from "@/components/NoteForm/NoteForm";
+import Pagination from "@/components/Pagination/Pagination";
+import SearchBox from "@/components/SearchBox/SearchBox";
+import Link from "next/link";
 import css from "../../page.module.css";
 
-export default function NotesClient({ tag }: { tag?: string } = {}) {
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+const PER_PAGE = 12;
 
-  const { data, isError, isLoading, error } = useQuery({
-    queryKey: ["notes", search, page, tag],
+export default function NotesClient({ tag }: { tag?: string } = {}) {
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  const debouncedSetSearch = useDebouncedCallback((value: string) => {
+    setDebouncedSearch(value);
+    setPage(1);
+  }, 300);
+
+  const handleSearchChange = (value: string) => {
+    setSearch(value);
+    debouncedSetSearch(value);
+  };
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["notes", page, debouncedSearch, tag],
     queryFn: () =>
       fetchNotes({
         page,
-        perPage: 12,
-        search,
+        perPage: PER_PAGE,
+        search: debouncedSearch || undefined,
         tag: tag && tag !== "all" ? tag : undefined,
       }),
     placeholderData: keepPreviousData,
   });
 
-  const debouncedSearch = useDebouncedCallback((value: string) => {
-    setSearch(value);
-    setPage(1);
-  }, 500);
-
-  const onClose = () => setIsModalOpen(false);
-  const onOpen = () => setIsModalOpen(true);
+  const handlePageChange = (newPage: number) => {
+    setPage(newPage);
+  };
 
   return (
     <div className={css.app}>
       <header className={css.toolbar}>
-        <SearchBox onChange={debouncedSearch} />
-
+        <SearchBox value={search} onChange={handleSearchChange} />
         {data && data.totalPages > 1 && (
           <Pagination
             totalPages={data.totalPages}
-            page={page}
-            setPage={setPage}
+            currentPage={page}
+            onPageChange={handlePageChange}
           />
         )}
-
-        <button className={css.button} type="button" onClick={onOpen}>
+        <Link href="/notes/action/create" className={css.button}>
           Create note +
-        </button>
+        </Link>
       </header>
-      {isLoading && !data && <p>Loading notes...</p>}
 
-      {isError && <p>Error: {error?.message || "Something went wrong"}</p>}
+      {isLoading && <p>Loading...</p>}
+      {isError && <p>Something went wrong. Please try again.</p>}
 
       {data && data.notes.length > 0 && <NoteList notes={data.notes} />}
-
-      {data && data.notes.length === 0 && !isLoading && (
-        <p>No notes found matching your search.</p>
-      )}
-
-      {isModalOpen && (
-        <Modal onClose={onClose}>
-          <NoteForm onCancel={onClose} />
-        </Modal>
-      )}
     </div>
   );
 }
